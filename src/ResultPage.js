@@ -9,17 +9,22 @@ const ResultPage = () => {
   useEffect(() => {
     const fetchResults = async () => {
       try {
-        const response = await fetch(`http://localhost:5000/api/results?email=${encodeURIComponent(casEmail)}`);
+        const response = await fetch(
+          `http://localhost:5000/api/results?email=${encodeURIComponent(casEmail)}`,
+          {
+            credentials: "include", // include cookies
+          }
+        );
         if (!response.ok) {
           throw new Error("Failed to fetch results");
         }
         const data = await response.json();
+        console.log("ResultPage: Fetched results:", data);
         setResults(data);
       } catch (error) {
-        console.error("Error fetching results:", error);
+        console.error("ResultPage: Error fetching results:", error);
       }
     };
-
     fetchResults();
   }, [casEmail]);
 

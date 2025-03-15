@@ -6,7 +6,7 @@ import ResultPage from "./ResultPage";
 
 const App = () => {
   useEffect(() => {
-    // Only redirect to CAS login if the user is at the root path
+    // Only redirect to CAS login if at the root path
     if (window.location.pathname === "/") {
       window.location.href = "http://localhost:5000/cas-login";
     }

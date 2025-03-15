@@ -5,23 +5,28 @@ const cors = require("cors");
 const { Pool } = require("pg");
 const CasAuthentication = require("cas-authentication");
 
-const app = express();
-app.use(express.json());
-app.use(cors());
+const app = express(); // Initialize the Express app
 
-// Session management for storing CAS session info
+app.use(express.json());
+app.use(cors({
+  origin: "http://localhost:3000",
+  credentials: true,
+}));
+
+// Set up session management for CAS
 app.use(
   session({
-    secret: "some-random-secret", // Change this in production!
+    secret: "some-random-secret", // change this in production!
     resave: false,
     saveUninitialized: true,
+    cookie: { secure: false }, // set to true if using HTTPS
   })
 );
 
-// Configure CAS using cas-authentication (using the base URL)
+// Configure CAS using cas-authentication with the base URL
 const cas = new CasAuthentication({
   cas_url: "https://login.iiit.ac.in/cas",
-  service_url: "http://localhost:5000", // Base URL
+  service_url: "http://localhost:5000", // base URL (do not include path)
   cas_version: "3.0",
 });
 
@@ -45,7 +50,7 @@ const pool = new Pool({
 });
 
 // Create the "users" table if it doesn't exist
-const createTableQuery = `
+const createUsersTableQuery = `
   CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     email VARCHAR(100) UNIQUE NOT NULL,
@@ -57,42 +62,53 @@ const createTableQuery = `
   );
 `;
 
-pool
-  .query(createTableQuery)
+// Create the "forms" table for storing form responses
+const createFormsTableQuery = `
+  CREATE TABLE IF NOT EXISTS forms (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    answers JSONB NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+  );
+`;
+
+pool.query(createUsersTableQuery)
   .then(() => console.log("Users table ready"))
-  .catch((err) => console.error("Error creating table:", err));
+  .catch((err) => console.error("Error creating users table:", err));
+
+pool.query(createFormsTableQuery)
+  .then(() => console.log("Forms table ready"))
+  .catch((err) => console.error("Error creating forms table:", err));
 
 /**
  * CAS LOGIN ROUTE
- * - Uses cas.bounce to enforce CAS authentication.
- * - After successful login, it retrieves the user email from session.
- * - It performs a case-insensitive lookup in the database.
- * - Debug logs are added to see what CAS returns and what the DB query finds.
+ * - Enforces CAS authentication.
+ * - Retrieves the CAS email from the session.
+ * - Looks up the user (case-insensitive) in the users table.
+ * - Redirects to the appropriate React page with the email as a query parameter.
  */
 app.get("/cas-login", cas.bounce, async (req, res) => {
-  const casUser = req.session[cas.session_name]; // typically the user's email
+  const casUser = req.session[cas.session_name]; // typically CAS returns an email
   console.log("CAS user from session:", casUser);
   if (!casUser) {
     return res.status(401).send("CAS authentication failed");
   }
 
   try {
-    // Use lower() to make the email comparison case-insensitive
     const query = "SELECT * FROM users WHERE lower(email) = lower($1)";
     const result = await pool.query(query, [casUser]);
     console.log("DB query result:", result.rows);
-
     if (result.rows.length === 0) {
-      // No profile exists → redirect to the create profile page on your React frontend.
-      return res.redirect("http://localhost:3000/create-profile");
+      // No profile exists: redirect to create-profile page with CAS email
+      return res.redirect("http://localhost:3000/create-profile?email=" + encodeURIComponent(casUser));
     } else {
       const user = result.rows[0];
       if (user.form_filled) {
-        // If the form is already filled, redirect to the results page.
-        return res.redirect("http://localhost:3000/results");
+        // Form already filled: redirect to results page with CAS email
+        return res.redirect("http://localhost:3000/results?email=" + encodeURIComponent(casUser));
       } else {
-        // Otherwise, redirect to the fill form page.
-        return res.redirect("http://localhost:3000/fill-form");
+        // Profile exists but form not filled: redirect to fill-form page with CAS email
+        return res.redirect("http://localhost:3000/fill-form?email=" + encodeURIComponent(casUser));
       }
     }
   } catch (error) {
@@ -103,8 +119,8 @@ app.get("/cas-login", cas.bounce, async (req, res) => {
 
 /**
  * CREATE PROFILE Endpoint
- * - Protected by CAS: uses cas.bounce.
- * - Uses the CAS email from the session (ignoring any email in the request body).
+ * - Protected by CAS.
+ * - Uses the CAS-provided email from the session.
  */
 app.post("/api/users", cas.bounce, async (req, res) => {
   const casUser = req.session[cas.session_name];
@@ -134,46 +150,66 @@ app.post("/api/users", cas.bounce, async (req, res) => {
 });
 
 /**
- * FILL FORM Endpoint
- * - Protected by CAS: uses cas.bounce.
- * - Marks the profile as form_filled.
+ * FORM SUBMISSION Endpoint
+ * - Protected by CAS.
+ * - Inserts form responses into the forms table and updates the user's profile (form_filled = true).
  */
-app.post("/api/fill-form", cas.bounce, async (req, res) => {
+app.post("/api/forms", cas.bounce, async (req, res) => {
   const casUser = req.session[cas.session_name];
-  console.log("Filling form for CAS user:", casUser);
+  console.log("Storing form submission for CAS user:", casUser);
   if (!casUser) {
     return res.status(401).json({ error: "No CAS user found" });
   }
-
   try {
-    const updateQuery = `
-      UPDATE users
-      SET form_filled = true
-      WHERE lower(email) = lower($1)
-      RETURNING *;
-    `;
-    const result = await pool.query(updateQuery, [casUser]);
-    if (result.rowCount === 0) {
+    // Look up the user's id in the users table (case-insensitive lookup)
+    const userQuery = "SELECT id FROM users WHERE lower(email) = lower($1)";
+    const userResult = await pool.query(userQuery, [casUser]);
+    if (userResult.rows.length === 0) {
       return res.status(404).json({ error: "User not found" });
     }
-    console.log("Form marked as filled for user:", result.rows[0]);
-    return res.json({ message: "Form filled", profile: result.rows[0] });
+    const userId = userResult.rows[0].id;
+
+    // Get the form answers from the request body
+    const { answers } = req.body;
+    if (!answers) {
+      return res.status(400).json({ error: "Form answers are required" });
+    }
+
+    // Insert form answers into the forms table
+    const insertFormQuery = `
+      INSERT INTO forms (user_id, answers)
+      VALUES ($1, $2)
+      RETURNING *;
+    `;
+    const formResult = await pool.query(insertFormQuery, [userId, JSON.stringify(answers)]);
+
+    // Update the user's form_filled flag to true
+    const updateUserQuery = `
+      UPDATE users
+      SET form_filled = true
+      WHERE id = $1
+      RETURNING *;
+    `;
+    const updateResult = await pool.query(updateUserQuery, [userId]);
+
+    console.log("Form submission stored for user:", updateResult.rows[0]);
+    return res.json({ message: "Form submitted", form: formResult.rows[0], user: updateResult.rows[0] });
   } catch (error) {
-    console.error("Error filling form:", error);
-    return res.status(500).json({ error: "Server error filling form" });
+    console.error("Error submitting form:", error);
+    return res.status(500).json({ error: "Server error submitting form" });
   }
 });
 
 /**
  * RESULTS Endpoint
- * - Returns dummy match data.
+ * - Protected by CAS.
+ * - Returns dummy match data (replace with actual matching algorithm later).
  */
 app.get("/api/results", cas.bounce, async (req, res) => {
   const casUser = req.session[cas.session_name];
   if (!casUser) {
     return res.status(401).json({ error: "No CAS user found" });
   }
-
   try {
     const matches = [
       { match: "John Doe", percentage: 90 },
@@ -187,7 +223,7 @@ app.get("/api/results", cas.bounce, async (req, res) => {
   }
 });
 
-// Optional: Debug endpoint to view all users
+// Optional debugging endpoints
 app.get("/api/users", async (req, res) => {
   try {
     const result = await pool.query("SELECT * FROM users");
@@ -195,6 +231,16 @@ app.get("/api/users", async (req, res) => {
   } catch (error) {
     console.error("Error fetching users:", error);
     return res.status(500).json({ error: "Server error fetching users" });
+  }
+});
+
+app.get("/api/forms", async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM forms");
+    return res.json(result.rows);
+  } catch (error) {
+    console.error("Error fetching forms:", error);
+    return res.status(500).json({ error: "Server error fetching forms" });
   }
 });
 
