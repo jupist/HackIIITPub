@@ -28,20 +28,29 @@ const ResultPage = () => {
     fetchResults();
   }, [casEmail]);
 
+  if (!results) {
+    return <p>Loading results...</p>;
+  }
+
   return (
     <div className="container result-page">
       <div className="card">
         <h2>Matched Profiles</h2>
-        {results ? (
-          <ul>
+        {results.matches && results.matches.length > 0 ? (
+          <div>
             {results.matches.map((match, index) => (
-              <li key={index}>
-                <strong>{match.match}:</strong> {match.percentage}%
-              </li>
+              <div key={index} className="match-card" style={{ marginBottom: "20px" }}>
+                <h3>{match.name}</h3>
+                <p><strong>Email:</strong> {match.email}</p>
+                <p><strong>Mobile Number:</strong> {match.mobile_number}</p>
+                <p><strong>Batch:</strong> {match.batch}</p>
+                <p><strong>Origin:</strong> {match.origin}</p>
+                <p><strong>Match Percentage:</strong> {match.percentage}%</p>
+              </div>
             ))}
-          </ul>
+          </div>
         ) : (
-          <p>Loading results...</p>
+          <p>No matches above 30% found.</p>
         )}
       </div>
     </div>

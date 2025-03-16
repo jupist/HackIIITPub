@@ -203,7 +203,8 @@ app.post("/api/forms", cas.bounce, async (req, res) => {
 /**
  * RESULTS Endpoint
  * - Protected by CAS.
- * - Returns dummy match data (replace with actual matching algorithm later).
+ * - Uses a personality-based matchmaking algorithm to compute match percentages.
+ * - Returns matches above 30% with each match's name, email, mobile number, origin, and batch.
  */
 app.get("/api/results", cas.bounce, async (req, res) => {
   const casUser = req.session[cas.session_name];
@@ -211,19 +212,172 @@ app.get("/api/results", cas.bounce, async (req, res) => {
     return res.status(401).json({ error: "No CAS user found" });
   }
   try {
-    const matches = [
-      { match: "John Doe", percentage: 90 },
-      { match: "Jane Smith", percentage: 85 },
-      { match: "Alex Johnson", percentage: 80 },
-    ];
-    return res.json({ email: casUser, matches });
+    // 1. Get current user's ID
+    const userQuery = "SELECT id FROM users WHERE lower(email) = lower($1)";
+    const userResult = await pool.query(userQuery, [casUser]);
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    const currentUserId = userResult.rows[0].id;
+
+    // 2. Retrieve current user's form answers
+    const formQuery = "SELECT answers FROM forms WHERE user_id = $1";
+    const formResult = await pool.query(formQuery, [currentUserId]);
+    if (formResult.rows.length === 0) {
+      return res.status(404).json({ error: "Form not submitted" });
+    }
+    const currentUserAnswers = formResult.rows[0].answers;
+
+    // 3. Retrieve all other users' form answers along with profile data (including mobile_number, origin, and batch)
+    const otherFormsQuery = `
+      SELECT f.answers, u.email, u.name, u.mobile_number, u.origin, u.batch
+      FROM forms f
+      JOIN users u ON f.user_id = u.id
+      WHERE u.id != $1
+    `;
+    const otherFormsResult = await pool.query(otherFormsQuery, [currentUserId]);
+    const otherUsers = otherFormsResult.rows;
+
+    // 4. Define the mapping for each question’s answer to personality type points.
+    // Our personality types: creative, intellectual, innovative, adventurous.
+    const personalityMapping = {
+      q1: {
+        A: { creative: 0, intellectual: 0, innovative: 0, adventurous: 10 },
+        B: { creative: 0, intellectual: 10, innovative: 0, adventurous: 0 },
+        C: { creative: 0, intellectual: 0, innovative: 0, adventurous: 10 },
+        D: { creative: 10, intellectual: 0, innovative: 0, adventurous: 0 },
+      },
+      q2: {
+        A: { creative: 15, intellectual: 0, innovative: 0, adventurous: 0 },
+        B: { creative: 0, intellectual: 15, innovative: 0, adventurous: 0 },
+        C: { creative: 0, intellectual: 0, innovative: 15, adventurous: 0 },
+        D: { creative: 0, intellectual: 0, innovative: 0, adventurous: 15 },
+      },
+      q3: {
+        A: { creative: 0, intellectual: 0, innovative: 0, adventurous: 10 },
+        B: { creative: 10, intellectual: 0, innovative: 0, adventurous: 0 },
+        C: { creative: 0, intellectual: 10, innovative: 0, adventurous: 0 },
+        D: { creative: 0, intellectual: 0, innovative: 10, adventurous: 0 },
+      },
+      q4: {
+        A: { creative: 0, intellectual: 0, innovative: 0, adventurous: 10 },
+        B: { creative: 0, intellectual: 0, innovative: 5, adventurous: 0 },
+        C: { creative: 0, intellectual: 10, innovative: 0, adventurous: 0 },
+        D: { creative: 0, intellectual: 5, innovative: 0, adventurous: 0 },
+      },
+      q5: {
+        A: { creative: 0, intellectual: 0, innovative: 10, adventurous: 0 },
+        B: { creative: 0, intellectual: 10, innovative: 0, adventurous: 0 },
+        C: { creative: 0, intellectual: 0, innovative: 0, adventurous: 10 },
+        D: { creative: 10, intellectual: 0, innovative: 0, adventurous: 0 },
+      },
+      q6: {
+        A: { creative: 0, intellectual: 0, innovative: 0, adventurous: 10 },
+        B: { creative: 0, intellectual: 10, innovative: 0, adventurous: 0 },
+        C: { creative: 0, intellectual: 0, innovative: 10, adventurous: 0 },
+        D: { creative: 0, intellectual: 0, innovative: 0, adventurous: 10 },
+      },
+      q7: {
+        A: { creative: 10, intellectual: 0, innovative: 0, adventurous: 0 },
+        B: { creative: 0, intellectual: 0, innovative: 0, adventurous: 10 },
+        C: { creative: 0, intellectual: 10, innovative: 0, adventurous: 0 },
+        D: { creative: 0, intellectual: 0, innovative: 10, adventurous: 0 },
+      },
+      q8: {
+        A: { creative: 0, intellectual: 10, innovative: 0, adventurous: 0 },
+        B: { creative: 10, intellectual: 0, innovative: 0, adventurous: 0 },
+        C: { creative: 0, intellectual: 0, innovative: 0, adventurous: 10 },
+        D: { creative: 0, intellectual: 0, innovative: 5, adventurous: 0 },
+      },
+      q9: {
+        A: { creative: 0, intellectual: 0, innovative: 10, adventurous: 0 },
+        B: { creative: 0, intellectual: 10, innovative: 0, adventurous: 0 },
+        C: { creative: 10, intellectual: 0, innovative: 0, adventurous: 0 },
+        D: { creative: 0, intellectual: 0, innovative: 0, adventurous: 5 },
+      },
+      q10: {
+        A: { creative: 0, intellectual: 0, innovative: 10, adventurous: 0 },
+        B: { creative: 10, intellectual: 0, innovative: 0, adventurous: 0 },
+        C: { creative: 0, intellectual: 0, innovative: 0, adventurous: 10 },
+        D: { creative: 0, intellectual: 10, innovative: 0, adventurous: 0 },
+      },
+    };
+
+    // 5. Function to compute a personality profile from form answers.
+    const computePersonalityProfile = (answers) => {
+      const profile = {
+        creative: 0,
+        intellectual: 0,
+        innovative: 0,
+        adventurous: 0,
+      };
+      for (let q in personalityMapping) {
+        const answer = answers[q];
+        if (answer && personalityMapping[q][answer]) {
+          const points = personalityMapping[q][answer];
+          profile.creative += points.creative;
+          profile.intellectual += points.intellectual;
+          profile.innovative += points.innovative;
+          profile.adventurous += points.adventurous;
+        }
+      }
+      return profile;
+    };
+
+    // 6. Function to derive ranking from a personality profile.
+    const getRanking = (profile) => {
+      const types = Object.entries(profile);
+      types.sort((a, b) => b[1] - a[1]);
+      const ranking = {};
+      types.forEach(([type], index) => {
+        ranking[type] = index + 1;
+      });
+      return ranking;
+    };
+
+    // 7. Compute current user's personality profile and ranking.
+    const currentProfile = computePersonalityProfile(currentUserAnswers);
+    const currentRanking = getRanking(currentProfile);
+    console.log("Current Profile:", currentProfile);
+    console.log("Current Ranking:", currentRanking);
+
+    // 8. Compute matches for each other user.
+    const maxDiff = 8; // Maximum possible difference (with 4 personality types, diff ranges from 0 to 8)
+    const matches = otherUsers.map((other) => {
+      const otherProfile = computePersonalityProfile(other.answers);
+      const otherRanking = getRanking(otherProfile);
+
+      let diffSum = 0;
+      for (let type in currentRanking) {
+        diffSum += Math.abs(currentRanking[type] - otherRanking[type]);
+      }
+      const percentage = Math.round((1 - diffSum / maxDiff) * 100);
+
+      // Return only the necessary fields for display:
+      return {
+        name: other.name || other.email,
+        email: other.email,
+        mobile_number: other.mobile_number,
+        origin: other.origin,
+        batch: other.batch,
+        percentage,
+      };
+    });
+
+    // 9. Sort matches and filter for those above 30%
+    matches.sort((a, b) => b.percentage - a.percentage);
+    const filteredMatches = matches.filter(match => match.percentage > 30);
+
+    return res.json({ email: casUser, matches: filteredMatches });
   } catch (error) {
-    console.error("Error fetching results:", error);
-    return res.status(500).json({ error: "Server error fetching results" });
+    console.error("Error during personality matchmaking:", error);
+    return res.status(500).json({ error: "Server error during matchmaking" });
   }
 });
 
-// Optional debugging endpoints
+/**
+ * Debugging Endpoints
+ */
 app.get("/api/users", async (req, res) => {
   try {
     const result = await pool.query("SELECT * FROM users");
