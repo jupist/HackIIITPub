@@ -1,3 +1,17 @@
+const { Client } = require('pg');
+
+const client = new Client({
+  connectionString: process.env.DATABASE_URL, 
+  ssl: { rejectUnauthorized: false } // Needed for Railway DB
+});
+
+client.connect()
+  .then(() => console.log("Connected to Railway DB!"))
+  .catch(err => console.error("Connection error", err));
+
+module.exports = client; // Export for use in other files
+
+
 require("dotenv").config();
 const express = require("express");
 const session = require("express-session");
