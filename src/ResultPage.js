@@ -2,7 +2,8 @@ import React, { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 const ResultPage = () => {
-  const [results, setResults] = useState(null);
+  const [results, setResults] = useState([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
   const [searchParams] = useSearchParams();
   const casEmail = searchParams.get("email") || "";
 
@@ -11,16 +12,13 @@ const ResultPage = () => {
       try {
         const response = await fetch(
           `http://localhost:5000/api/results?email=${encodeURIComponent(casEmail)}`,
-          {
-            credentials: "include", // include cookies
-          }
+          { credentials: "include" }
         );
         if (!response.ok) {
           throw new Error("Failed to fetch results");
         }
         const data = await response.json();
-        console.log("ResultPage: Fetched results:", data);
-        setResults(data);
+        setResults(data.matches || []);
       } catch (error) {
         console.error("ResultPage: Error fetching results:", error);
       }
@@ -28,31 +26,37 @@ const ResultPage = () => {
     fetchResults();
   }, [casEmail]);
 
-  if (!results) {
+  const nextMatch = () => {
+    setCurrentIndex((prevIndex) => (prevIndex + 1) % results.length);
+  };
+
+  const prevMatch = () => {
+    setCurrentIndex((prevIndex) => (prevIndex - 1 + results.length) % results.length);
+  };
+
+  if (!results.length) {
     return <p>Loading results...</p>;
   }
+
+  const currentMatch = results[currentIndex];
 
   return (
     <div className="container result-page">
       <div className="card">
-        <h2>Matched Profiles</h2>
-        {results.matches && results.matches.length > 0 ? (
-          <div>
-            {results.matches.map((match, index) => (
-              <div key={index} className="match-card" style={{ marginBottom: "20px" }}>
-                <h3>{match.name}</h3>
-                <p><strong>Email:</strong> {match.email}</p>
-                <p><strong>Mobile Number:</strong> {match.mobile_number}</p>
-                <p><strong>Joining year:</strong> {match.batch}</p>
-                <p><strong>Branch:</strong> {match.branch}</p>
-                <p><strong>Origin:</strong> {match.origin}</p>
-                <p><strong>Match Percentage:</strong> {match.percentage}%</p>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p>No matches above 30% found.</p>
-        )}
+        <h2>Matches for You</h2>
+        <div className="match-card">
+          <h3>{currentMatch.name}</h3>
+          <p><strong>Email:</strong> {currentMatch.email}</p>
+          <p><strong>Mobile Number:</strong> {currentMatch.mobile_number}</p>
+          <p><strong>Joining Year:</strong> {currentMatch.batch}</p>
+          <p><strong>Branch:</strong> {currentMatch.branch}</p>
+          <p><strong>Origin:</strong> {currentMatch.origin}</p>
+          <p><strong>Match Percentage:</strong> {currentMatch.percentage}%</p>
+        </div>
+        <div className="arrow-buttons">
+          <button onClick={prevMatch}>⬅ Prev</button>
+          <button onClick={nextMatch}>Next ➡</button>
+        </div>
       </div>
     </div>
   );

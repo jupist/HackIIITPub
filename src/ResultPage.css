@@ -1,23 +1,24 @@
 .matches-container {
-    max-height: 80vh; /* Adjust the height as needed */
-    overflow-y: auto;
-    padding-right: 10px; /* Optional: add some padding for the scrollbar */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    max-height: 80vh;
+    overflow: hidden;
   }
   
   .match-card {
     border: 1px solid #ccc;
-    margin: 10px 0;
-    padding: 10px;
+    padding: 20px;
     border-radius: 5px;
     background-color: #f9f9f9;
+    width: 100%;
+    max-width: 400px;
+    text-align: left;
   }
   
-  .profile-details ul {
-    list-style: none;
-    padding: 0;
+  .arrow-buttons {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 10px;
   }
-  
-  .profile-details li {
-    margin: 5px 0;
-  }
-  
