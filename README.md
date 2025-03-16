@@ -1,8 +1,19 @@
-# Getting Started with Create React App
+# IIIT Friend Matcher
+## Team: Clumsy with a chance of segfaults
+### Team members: Anushka Sinha and Aman Jayesh
+A website that authenticates IIIT students and allows them to create a profile in order to participate in filling a form that let's them find people similar to them and a match percentage! 
+Our target audience is mainly college freshmen during induction week where the results of this form allow one to find potential friends easily in a stressful first week of college, however it can be used by any IIIT student.
+
+## Software stack:
+React: Frontend
+Node JS and Express JS: Backend
+PostgreSQL: Database
+
+## Getting Started with Create React App
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 
-## Available Scripts
+Available Scripts
 
 In the project directory, you can run:
 
