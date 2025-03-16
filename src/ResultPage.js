@@ -43,7 +43,8 @@ const ResultPage = () => {
                 <h3>{match.name}</h3>
                 <p><strong>Email:</strong> {match.email}</p>
                 <p><strong>Mobile Number:</strong> {match.mobile_number}</p>
-                <p><strong>Batch:</strong> {match.batch}</p>
+                <p><strong>Joining year:</strong> {match.batch}</p>
+                <p><strong>Branch:</strong> {match.branch}</p>
                 <p><strong>Origin:</strong> {match.origin}</p>
                 <p><strong>Match Percentage:</strong> {match.percentage}%</p>
               </div>

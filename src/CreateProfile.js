@@ -9,6 +9,7 @@ const CreateProfile = () => {
     name: "",
     mobile_number: "",
     batch: "",
+    branch: "",
     origin: "",
   });
 
@@ -77,9 +78,18 @@ const CreateProfile = () => {
           <input
             type="text"
             name="batch"
-            placeholder="Batch"
+            placeholder="Joining Year"
             className="input"
             value={formData.batch}
+            onChange={handleChange}
+            required
+          />
+          <input
+            type="text"
+            name="branch"
+            placeholder="Branch"
+            className="input"
+            value={formData.branch}
             onChange={handleChange}
             required
           />

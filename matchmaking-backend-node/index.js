@@ -57,6 +57,7 @@ const createUsersTableQuery = `
     name VARCHAR(100),
     mobile_number VARCHAR(20),
     batch VARCHAR(50),
+    branch VARCHAR(50),
     origin VARCHAR(100),
     form_filled BOOLEAN DEFAULT false
   );
@@ -130,16 +131,16 @@ app.post("/api/users", cas.bounce, async (req, res) => {
   }
 
   try {
-    const { name, mobile_number, batch, origin } = req.body;
-    if (!name || !mobile_number || !batch || !origin) {
+    const { name, mobile_number, batch, branch, origin } = req.body;
+    if (!name || !mobile_number || !batch || !branch || !origin) {
       return res.status(400).json({ error: "All fields are required (except email)" });
     }
     const insertQuery = `
-      INSERT INTO users (email, name, mobile_number, batch, origin, form_filled)
-      VALUES ($1, $2, $3, $4, $5, false)
+      INSERT INTO users (email, name, mobile_number, batch, branch, origin, form_filled)
+      VALUES ($1, $2, $3, $4, $5, $6, false)
       RETURNING *;
     `;
-    const values = [casUser, name, mobile_number, batch, origin];
+    const values = [casUser, name, mobile_number, batch, branch, origin];
     const result = await pool.query(insertQuery, values);
     console.log("Profile created:", result.rows[0]);
     return res.status(201).json({ message: "Profile created", profile: result.rows[0] });
@@ -228,9 +229,9 @@ app.get("/api/results", cas.bounce, async (req, res) => {
     }
     const currentUserAnswers = formResult.rows[0].answers;
 
-    // 3. Retrieve all other users' form answers along with profile data (including mobile_number, origin, and batch)
+    // 3. Retrieve all other users' form answers along with profile data
     const otherFormsQuery = `
-      SELECT f.answers, u.email, u.name, u.mobile_number, u.origin, u.batch
+      SELECT f.answers, u.email, u.name, u.mobile_number, u.origin, u.batch, u.branch
       FROM forms f
       JOIN users u ON f.user_id = u.id
       WHERE u.id != $1
@@ -239,128 +240,114 @@ app.get("/api/results", cas.bounce, async (req, res) => {
     const otherUsers = otherFormsResult.rows;
 
     // 4. Define the mapping for each question’s answer to personality type points.
-    // Our personality types: creative, intellectual, innovative, adventurous.
     const personalityMapping = {
       q1: {
-        A: { creative: 0, intellectual: 0, innovative: 0, adventurous: 10 },
-        B: { creative: 0, intellectual: 10, innovative: 0, adventurous: 0 },
-        C: { creative: 0, intellectual: 0, innovative: 0, adventurous: 10 },
-        D: { creative: 10, intellectual: 0, innovative: 0, adventurous: 0 },
+        A: { overthinker: 0, impulsive: 10, DGAF: 5, childish: 0 },
+        B: { overthinker: 10, impulsive: 0, DGAF: 5, childish: 0 },
+        C: { overthinker: 0, impulsive: 10, DGAF: 0, childish: 5 },
+        D: { overthinker: 5, impulsive: 0, DGAF: 2, childish: 10 },
       },
       q2: {
-        A: { creative: 15, intellectual: 0, innovative: 0, adventurous: 0 },
-        B: { creative: 0, intellectual: 15, innovative: 0, adventurous: 0 },
-        C: { creative: 0, intellectual: 0, innovative: 15, adventurous: 0 },
-        D: { creative: 0, intellectual: 0, innovative: 0, adventurous: 15 },
+        A: { overthinker: 2, impulsive: 10, DGAF: 0, childish: 5 },
+        B: { overthinker: 10, impulsive: 0, DGAF: 5, childish: 0 },
+        C: { overthinker: 0, impulsive: 10, DGAF: 0, childish: 5 },
+        D: { overthinker: 0, impulsive: 10, DGAF: 5, childish: 0 },
       },
       q3: {
-        A: { creative: 0, intellectual: 0, innovative: 0, adventurous: 10 },
-        B: { creative: 10, intellectual: 0, innovative: 0, adventurous: 0 },
-        C: { creative: 0, intellectual: 10, innovative: 0, adventurous: 0 },
-        D: { creative: 0, intellectual: 0, innovative: 10, adventurous: 0 },
+        A: { overthinker: 0, impulsive: 10, DGAF: 0, childish: 0 },
+        B: { overthinker: 10, impulsive: 0, DGAF: 5, childish: 2 },
+        C: { overthinker: 0, impulsive: 5, DGAF: 10, childish: 0 },
+        D: { overthinker: 10, impulsive: 0, DGAF: 0, childish: 10 },
       },
       q4: {
-        A: { creative: 0, intellectual: 0, innovative: 0, adventurous: 10 },
-        B: { creative: 0, intellectual: 0, innovative: 5, adventurous: 0 },
-        C: { creative: 0, intellectual: 10, innovative: 0, adventurous: 0 },
-        D: { creative: 0, intellectual: 5, innovative: 0, adventurous: 0 },
+        A: { overthinker: 0, impulsive: 10, DGAF: 0, childish: 5 },
+        B: { overthinker: 5, impulsive: 0, DGAF: 0, childish: 0 },
+        C: { overthinker: 10, impulsive: 0, DGAF: 10, childish: 0 },
+        D: { overthinker: 10, impulsive: 0, DGAF: 0, childish: 0 },
       },
       q5: {
-        A: { creative: 0, intellectual: 0, innovative: 10, adventurous: 0 },
-        B: { creative: 0, intellectual: 10, innovative: 0, adventurous: 0 },
-        C: { creative: 0, intellectual: 0, innovative: 0, adventurous: 10 },
-        D: { creative: 10, intellectual: 0, innovative: 0, adventurous: 0 },
+        A: { overthinker: 10, impulsive: 0, DGAF: 5, childish: 0 },
+        B: { overthinker: 0, impulsive: 5, DGAF: 0, childish: 5 },
+        C: { overthinker: 0, impulsive: 0, DGAF: 0, childish: 0 },
+        D: { overthinker: 10, impulsive: 0, DGAF: 10, childish: 0 },
       },
       q6: {
-        A: { creative: 0, intellectual: 0, innovative: 0, adventurous: 10 },
-        B: { creative: 0, intellectual: 10, innovative: 0, adventurous: 0 },
-        C: { creative: 0, intellectual: 0, innovative: 10, adventurous: 0 },
-        D: { creative: 0, intellectual: 0, innovative: 0, adventurous: 10 },
+        A: { overthinker: 0, impulsive: 10, DGAF: 0, childish: 5 },
+        B: { overthinker: 10, impulsive: 0, DGAF: 10, childish: 0 },
+        C: { overthinker: 5, impulsive: 0, DGAF: 0, childish: 0 },
+        D: { overthinker: 0, impulsive: 10, DGAF: 0, childish: 10 },
       },
       q7: {
-        A: { creative: 10, intellectual: 0, innovative: 0, adventurous: 0 },
-        B: { creative: 0, intellectual: 0, innovative: 0, adventurous: 10 },
-        C: { creative: 0, intellectual: 10, innovative: 0, adventurous: 0 },
-        D: { creative: 0, intellectual: 0, innovative: 10, adventurous: 0 },
+        A: { overthinker: 0, impulsive: 5, DGAF: 0, childish: 10 },
+        B: { overthinker: 0, impulsive: 10, DGAF: 5, childish: 0 },
+        C: { overthinker: 5, impulsive: 0, DGAF: 0, childish: 0 },
+        D: { overthinker: 10, impulsive: 0, DGAF: 5, childish: 0 },
       },
       q8: {
-        A: { creative: 0, intellectual: 10, innovative: 0, adventurous: 0 },
-        B: { creative: 10, intellectual: 0, innovative: 0, adventurous: 0 },
-        C: { creative: 0, intellectual: 0, innovative: 0, adventurous: 10 },
-        D: { creative: 0, intellectual: 0, innovative: 5, adventurous: 0 },
+        A: { overthinker: 10, impulsive: 0, DGAF: 5, childish: 0 },
+        B: { overthinker: 10, impulsive: 0, DGAF: 0, childish: 0 },
+        C: { overthinker: 0, impulsive: 10, DGAF: 0, childish: 5 },
+        D: { overthinker: 0, impulsive: 0, DGAF: 10, childish: 10 },
       },
       q9: {
-        A: { creative: 0, intellectual: 0, innovative: 10, adventurous: 0 },
-        B: { creative: 0, intellectual: 10, innovative: 0, adventurous: 0 },
-        C: { creative: 10, intellectual: 0, innovative: 0, adventurous: 0 },
-        D: { creative: 0, intellectual: 0, innovative: 0, adventurous: 5 },
+        A: { overthinker: 0, impulsive: 10, DGAF: 0, childish: 10 },
+        B: { overthinker: 10, impulsive: 0, DGAF: 0, childish: 0 },
+        C: { overthinker: 5, impulsive: 0, DGAF: 5, childish: 0 },
+        D: { overthinker: 15, impulsive: 0, DGAF: 5, childish: 0 },
       },
       q10: {
-        A: { creative: 0, intellectual: 0, innovative: 10, adventurous: 0 },
-        B: { creative: 10, intellectual: 0, innovative: 0, adventurous: 0 },
-        C: { creative: 0, intellectual: 0, innovative: 0, adventurous: 10 },
-        D: { creative: 0, intellectual: 10, innovative: 0, adventurous: 0 },
+        A: { overthinker: 0, impulsive: 5, DGAF: 0, childish: 10 },
+        B: { overthinker: 5, impulsive: 0, DGAF: 5, childish: 0 },
+        C: { overthinker: 0, impulsive: 5, DGAF: 10, childish: 5 },
+        D: { overthinker: 10, impulsive: 0, DGAF: 10, childish: 0 },
       },
     };
 
     // 5. Function to compute a personality profile from form answers.
     const computePersonalityProfile = (answers) => {
-      const profile = {
-        creative: 0,
-        intellectual: 0,
-        innovative: 0,
-        adventurous: 0,
-      };
+      const profile = { overthinker: 0, impulsive: 0, DGAF: 0, childish: 0 };
       for (let q in personalityMapping) {
         const answer = answers[q];
         if (answer && personalityMapping[q][answer]) {
           const points = personalityMapping[q][answer];
-          profile.creative += points.creative;
-          profile.intellectual += points.intellectual;
-          profile.innovative += points.innovative;
-          profile.adventurous += points.adventurous;
+          profile.overthinker += points.overthinker;
+          profile.impulsive += points.impulsive;
+          profile.DGAF += points.DGAF;
+          profile.childish += points.childish;
         }
       }
       return profile;
     };
 
-    // 6. Function to derive ranking from a personality profile.
-    const getRanking = (profile) => {
-      const types = Object.entries(profile);
-      types.sort((a, b) => b[1] - a[1]);
-      const ranking = {};
-      types.forEach(([type], index) => {
-        ranking[type] = index + 1;
-      });
-      return ranking;
-    };
-
-    // 7. Compute current user's personality profile and ranking.
+    // 6. Compute current user's personality profile
     const currentProfile = computePersonalityProfile(currentUserAnswers);
-    const currentRanking = getRanking(currentProfile);
-    console.log("Current Profile:", currentProfile);
-    console.log("Current Ranking:", currentRanking);
 
-    // 8. Compute matches for each other user.
-    const maxDiff = 8; // Maximum possible difference (with 4 personality types, diff ranges from 0 to 8)
+    // 7. Precomputed maximum possible total difference across all categories
+    const maxTotalDifference = 350; // Calculated from the personality mapping
+
+    // 8. Compute matches based on category points
     const matches = otherUsers.map((other) => {
       const otherProfile = computePersonalityProfile(other.answers);
-      const otherRanking = getRanking(otherProfile);
+      
+      // Calculate total difference in points across all categories
+      let totalDifference = 0;
+      totalDifference += Math.abs(currentProfile.overthinker - otherProfile.overthinker);
+      totalDifference += Math.abs(currentProfile.impulsive - otherProfile.impulsive);
+      totalDifference += Math.abs(currentProfile.DGAF - otherProfile.DGAF);
+      totalDifference += Math.abs(currentProfile.childish - otherProfile.childish);
 
-      let diffSum = 0;
-      for (let type in currentRanking) {
-        diffSum += Math.abs(currentRanking[type] - otherRanking[type]);
-      }
-      const percentage = Math.round((1 - diffSum / maxDiff) * 100);
+      // Calculate match percentage
+      const percentage = Math.round(100 - (totalDifference / maxTotalDifference) * 100);
+      const clampedPercentage = Math.max(0, Math.min(100, percentage));
 
-      // Return only the necessary fields for display:
       return {
         name: other.name || other.email,
         email: other.email,
         mobile_number: other.mobile_number,
         origin: other.origin,
         batch: other.batch,
-        percentage,
+        branch: other.branch,
+        percentage: clampedPercentage,
       };
     });
 
