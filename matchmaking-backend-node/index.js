@@ -31,13 +31,15 @@ app.use(
   })
 );
 
-// Configure CAS with environment-aware service URL
+// Updated CAS configuration with proper naming
 const cas = new CasAuthentication({
   cas_url: "https://login.iiit.ac.in/cas",
   service_url: process.env.NODE_ENV === 'production' 
     ? "https://hackiiitpub.onrender.com" // Your actual Render URL
     : "http://localhost:5000",
   cas_version: "3.0",
+  session_name: "cas_user", // Explicitly naming the session key
+  session_info: "cas_userinfo" // Additional session info
 });
 
 // Read environment variables
@@ -92,30 +94,36 @@ const Form = model('Form', FormSchema);
  * - Redirects to the appropriate React page with the email as a query parameter.
  */
 app.get("/cas-login", cas.bounce, async (req, res) => {
-  const casUser = req.session[cas.session_name]; // typically CAS returns an email
+  // Better session handling - debug logging
+  console.log("Session after CAS authentication:", req.session);
+  
+  // Get the CAS username from the session
+  const casUser = req.session.cas_user;
   console.log("CAS user from session:", casUser);
+  
   if (!casUser) {
-    return res.status(401).send("CAS authentication failed");
+    return res.status(401).send("CAS authentication failed - No user in session");
   }
 
   try {
     const user = await User.findOne({ email: casUser.toLowerCase() });
     console.log("DB query result:", user);
     
-    // Frontend URL based on environment - fixed to use exact URL
-    const frontendURL = process.env.NODE_ENV === 'production'
-      ? 'https://hack-iiit-pub.vercel.app'  // Your actual Vercel URL
-      : 'http://localhost:3000';
+    // Frontend URL hardcoded exactly for production
+    const frontendURL = 'https://hack-iiit-pub.vercel.app';
     
     if (!user) {
       // No profile exists: redirect to create-profile page with CAS email
+      console.log(`Redirecting to: ${frontendURL}/create-profile?email=${encodeURIComponent(casUser)}`);
       return res.redirect(`${frontendURL}/create-profile?email=${encodeURIComponent(casUser)}`);
     } else {
       if (user.form_filled) {
         // Form already filled: redirect to results page with CAS email
+        console.log(`Redirecting to: ${frontendURL}/results?email=${encodeURIComponent(casUser)}`);
         return res.redirect(`${frontendURL}/results?email=${encodeURIComponent(casUser)}`);
       } else {
         // Profile exists but form not filled: redirect to fill-form page with CAS email
+        console.log(`Redirecting to: ${frontendURL}/fill-form?email=${encodeURIComponent(casUser)}`);
         return res.redirect(`${frontendURL}/fill-form?email=${encodeURIComponent(casUser)}`);
       }
     }
@@ -131,7 +139,7 @@ app.get("/cas-login", cas.bounce, async (req, res) => {
  * - Uses the CAS-provided email from the session.
  */
 app.post("/api/users", cas.bounce, async (req, res) => {
-  const casUser = req.session[cas.session_name];
+  const casUser = req.session.cas_user;
   console.log("Creating profile for CAS user:", casUser);
   if (!casUser) {
     return res.status(401).json({ error: "No CAS user found" });
@@ -171,7 +179,7 @@ app.post("/api/users", cas.bounce, async (req, res) => {
  * - Inserts form responses into the forms collection and updates the user's profile (form_filled = true).
  */
 app.post("/api/forms", cas.bounce, async (req, res) => {
-  const casUser = req.session[cas.session_name];
+  const casUser = req.session.cas_user;
   console.log("Storing form submission for CAS user:", casUser);
   if (!casUser) {
     return res.status(401).json({ error: "No CAS user found" });
@@ -216,7 +224,7 @@ app.post("/api/forms", cas.bounce, async (req, res) => {
  * - Returns matches above 30% with each match's name, email, mobile number, origin, and batch.
  */
 app.get("/api/results", cas.bounce, async (req, res) => {
-  const casUser = req.session[cas.session_name];
+  const casUser = req.session.cas_user;
   if (!casUser) {
     return res.status(401).json({ error: "No CAS user found" });
   }
