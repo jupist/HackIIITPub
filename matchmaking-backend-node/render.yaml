@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: matchmaking-backend
+    env: node
+    buildCommand: npm install
+    startCommand: node index.js
+    envVars:
+      - key: PORT
+        value: 5000
+      - key: MONGODB_URI
+        sync: false # This means you'll set this manually in the Render dashboard

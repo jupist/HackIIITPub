@@ -2,14 +2,19 @@ require("dotenv").config();
 const express = require("express");
 const session = require("express-session");
 const cors = require("cors");
-const { Pool } = require("pg");
+const mongoose = require("mongoose");
+const { Schema, model } = mongoose;
 const CasAuthentication = require("cas-authentication");
 
-const app = express(); // Initialize the Express app
+const app = express();
 
 app.use(express.json());
+
+// Updated CORS configuration to support both development and production
 app.use(cors({
-  origin: "http://localhost:3000",
+  origin: process.env.NODE_ENV === 'production' 
+    ? ['https://your-frontend-domain.com', 'http://localhost:3000'] 
+    : 'http://localhost:3000',
   credentials: true,
 }));
 
@@ -31,61 +36,46 @@ const cas = new CasAuthentication({
 });
 
 // Read environment variables
-const {
-  PORT = 5000,
-  DB_USER,
-  DB_PASSWORD,
-  DB_HOST,
-  DB_PORT,
-  DB_NAME,
-} = process.env;
+const { PORT = 5000, MONGODB_URI } = process.env;
 
-// Create PostgreSQL connection pool
-const pool = new Pool({
-  user: DB_USER,
-  password: DB_PASSWORD,
-  host: DB_HOST,
-  port: DB_PORT,
-  database: DB_NAME,
+// Log the MongoDB URI (for debugging - remove in production)
+console.log("Attempting to connect to MongoDB with URI:", MONGODB_URI ? "URI exists" : "URI is missing");
+
+// Connect to MongoDB with more robust error handling
+mongoose.connect(MONGODB_URI)
+  .then(() => console.log("Connected to MongoDB successfully"))
+  .catch(err => {
+    console.error("MongoDB connection error:", err);
+    console.error("Please make sure MongoDB is running and your .env file contains a valid MONGODB_URI");
+    process.exit(1); // Exit the process on connection failure
+  });
+
+// Define MongoDB Schemas
+const UserSchema = new Schema({
+  email: { type: String, required: true, unique: true, lowercase: true },
+  name: { type: String, required: true },
+  mobile_number: { type: String, required: true },
+  batch: { type: String, required: true },
+  branch: { type: String, required: true },
+  origin: { type: String, required: true },
+  form_filled: { type: Boolean, default: false }
 });
 
-// Create the "users" table if it doesn't exist
-const createUsersTableQuery = `
-  CREATE TABLE IF NOT EXISTS users (
-    id SERIAL PRIMARY KEY,
-    email VARCHAR(100) UNIQUE NOT NULL,
-    name VARCHAR(100),
-    mobile_number VARCHAR(20),
-    batch VARCHAR(50),
-    branch VARCHAR(50),
-    origin VARCHAR(100),
-    form_filled BOOLEAN DEFAULT false
-  );
-`;
+const FormSchema = new Schema({
+  user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  answers: { type: Object, required: true },
+  created_at: { type: Date, default: Date.now }
+});
 
-// Create the "forms" table for storing form responses
-const createFormsTableQuery = `
-  CREATE TABLE IF NOT EXISTS forms (
-    id SERIAL PRIMARY KEY,
-    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-    answers JSONB NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-  );
-`;
-
-pool.query(createUsersTableQuery)
-  .then(() => console.log("Users table ready"))
-  .catch((err) => console.error("Error creating users table:", err));
-
-pool.query(createFormsTableQuery)
-  .then(() => console.log("Forms table ready"))
-  .catch((err) => console.error("Error creating forms table:", err));
+// Create models
+const User = model('User', UserSchema);
+const Form = model('Form', FormSchema);
 
 /**
  * CAS LOGIN ROUTE
  * - Enforces CAS authentication.
  * - Retrieves the CAS email from the session.
- * - Looks up the user (case-insensitive) in the users table.
+ * - Looks up the user in the users collection.
  * - Redirects to the appropriate React page with the email as a query parameter.
  */
 app.get("/cas-login", cas.bounce, async (req, res) => {
@@ -96,14 +86,13 @@ app.get("/cas-login", cas.bounce, async (req, res) => {
   }
 
   try {
-    const query = "SELECT * FROM users WHERE lower(email) = lower($1)";
-    const result = await pool.query(query, [casUser]);
-    console.log("DB query result:", result.rows);
-    if (result.rows.length === 0) {
+    const user = await User.findOne({ email: casUser.toLowerCase() });
+    console.log("DB query result:", user);
+    
+    if (!user) {
       // No profile exists: redirect to create-profile page with CAS email
       return res.redirect("http://localhost:3000/create-profile?email=" + encodeURIComponent(casUser));
     } else {
-      const user = result.rows[0];
       if (user.form_filled) {
         // Form already filled: redirect to results page with CAS email
         return res.redirect("http://localhost:3000/results?email=" + encodeURIComponent(casUser));
@@ -135,17 +124,25 @@ app.post("/api/users", cas.bounce, async (req, res) => {
     if (!name || !mobile_number || !batch || !branch || !origin) {
       return res.status(400).json({ error: "All fields are required (except email)" });
     }
-    const insertQuery = `
-      INSERT INTO users (email, name, mobile_number, batch, branch, origin, form_filled)
-      VALUES ($1, $2, $3, $4, $5, $6, false)
-      RETURNING *;
-    `;
-    const values = [casUser, name, mobile_number, batch, branch, origin];
-    const result = await pool.query(insertQuery, values);
-    console.log("Profile created:", result.rows[0]);
-    return res.status(201).json({ message: "Profile created", profile: result.rows[0] });
+    
+    const newUser = new User({
+      email: casUser.toLowerCase(),
+      name,
+      mobile_number,
+      batch,
+      branch,
+      origin,
+      form_filled: false
+    });
+    
+    const savedUser = await newUser.save();
+    console.log("Profile created:", savedUser);
+    return res.status(201).json({ message: "Profile created", profile: savedUser });
   } catch (error) {
     console.error("Error creating profile:", error);
+    if (error.code === 11000) { // MongoDB duplicate key error
+      return res.status(409).json({ error: "User with this email already exists" });
+    }
     return res.status(500).json({ error: "Server error creating profile" });
   }
 });
@@ -153,7 +150,7 @@ app.post("/api/users", cas.bounce, async (req, res) => {
 /**
  * FORM SUBMISSION Endpoint
  * - Protected by CAS.
- * - Inserts form responses into the forms table and updates the user's profile (form_filled = true).
+ * - Inserts form responses into the forms collection and updates the user's profile (form_filled = true).
  */
 app.post("/api/forms", cas.bounce, async (req, res) => {
   const casUser = req.session[cas.session_name];
@@ -161,14 +158,13 @@ app.post("/api/forms", cas.bounce, async (req, res) => {
   if (!casUser) {
     return res.status(401).json({ error: "No CAS user found" });
   }
+  
   try {
-    // Look up the user's id in the users table (case-insensitive lookup)
-    const userQuery = "SELECT id FROM users WHERE lower(email) = lower($1)";
-    const userResult = await pool.query(userQuery, [casUser]);
-    if (userResult.rows.length === 0) {
+    // Look up the user in the users collection
+    const user = await User.findOne({ email: casUser.toLowerCase() });
+    if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
-    const userId = userResult.rows[0].id;
 
     // Get the form answers from the request body
     const { answers } = req.body;
@@ -176,25 +172,19 @@ app.post("/api/forms", cas.bounce, async (req, res) => {
       return res.status(400).json({ error: "Form answers are required" });
     }
 
-    // Insert form answers into the forms table
-    const insertFormQuery = `
-      INSERT INTO forms (user_id, answers)
-      VALUES ($1, $2)
-      RETURNING *;
-    `;
-    const formResult = await pool.query(insertFormQuery, [userId, JSON.stringify(answers)]);
+    // Create and save the new form
+    const newForm = new Form({
+      user_id: user._id,
+      answers
+    });
+    const savedForm = await newForm.save();
 
     // Update the user's form_filled flag to true
-    const updateUserQuery = `
-      UPDATE users
-      SET form_filled = true
-      WHERE id = $1
-      RETURNING *;
-    `;
-    const updateResult = await pool.query(updateUserQuery, [userId]);
+    user.form_filled = true;
+    const updatedUser = await user.save();
 
-    console.log("Form submission stored for user:", updateResult.rows[0]);
-    return res.json({ message: "Form submitted", form: formResult.rows[0], user: updateResult.rows[0] });
+    console.log("Form submission stored for user:", updatedUser);
+    return res.json({ message: "Form submitted", form: savedForm, user: updatedUser });
   } catch (error) {
     console.error("Error submitting form:", error);
     return res.status(500).json({ error: "Server error submitting form" });
@@ -212,34 +202,32 @@ app.get("/api/results", cas.bounce, async (req, res) => {
   if (!casUser) {
     return res.status(401).json({ error: "No CAS user found" });
   }
+  
   try {
-    // 1. Get current user's ID
-    const userQuery = "SELECT id FROM users WHERE lower(email) = lower($1)";
-    const userResult = await pool.query(userQuery, [casUser]);
-    if (userResult.rows.length === 0) {
+    // 1. Get current user
+    const currentUser = await User.findOne({ email: casUser.toLowerCase() });
+    if (!currentUser) {
       return res.status(404).json({ error: "User not found" });
     }
-    const currentUserId = userResult.rows[0].id;
 
     // 2. Retrieve current user's form answers
-    const formQuery = "SELECT answers FROM forms WHERE user_id = $1";
-    const formResult = await pool.query(formQuery, [currentUserId]);
-    if (formResult.rows.length === 0) {
+    const currentUserForm = await Form.findOne({ user_id: currentUser._id });
+    if (!currentUserForm) {
       return res.status(404).json({ error: "Form not submitted" });
     }
-    const currentUserAnswers = formResult.rows[0].answers;
+    const currentUserAnswers = currentUserForm.answers;
 
     // 3. Retrieve all other users' form answers along with profile data
-    const otherFormsQuery = `
-      SELECT f.answers, u.email, u.name, u.mobile_number, u.origin, u.batch, u.branch
-      FROM forms f
-      JOIN users u ON f.user_id = u.id
-      WHERE u.id != $1
-    `;
-    const otherFormsResult = await pool.query(otherFormsQuery, [currentUserId]);
-    const otherUsers = otherFormsResult.rows;
+    const otherForms = await Form.find().populate({
+      path: 'user_id',
+      match: { _id: { $ne: currentUser._id } },
+      select: 'email name mobile_number origin batch branch'
+    }).exec();
+    
+    // Filter out forms where user_id is null (due to match condition)
+    const validOtherForms = otherForms.filter(form => form.user_id !== null);
 
-    // 4. Define the mapping for each question’s answer to personality type points.
+    // 4. Define the mapping for each question's answer to personality type points.
     const personalityMapping = {
       q1: {
         A: { overthinker: 0, impulsive: 10, DGAF: 5, childish: 0 },
@@ -326,8 +314,9 @@ app.get("/api/results", cas.bounce, async (req, res) => {
     const maxTotalDifference = 350; // Calculated from the personality mapping
 
     // 8. Compute matches based on category points
-    const matches = otherUsers.map((other) => {
-      const otherProfile = computePersonalityProfile(other.answers);
+    const matches = validOtherForms.map((otherForm) => {
+      const otherProfile = computePersonalityProfile(otherForm.answers);
+      const otherUser = otherForm.user_id;
       
       // Calculate total difference in points across all categories
       let totalDifference = 0;
@@ -341,12 +330,12 @@ app.get("/api/results", cas.bounce, async (req, res) => {
       const clampedPercentage = Math.max(0, Math.min(100, percentage));
 
       return {
-        name: other.name || other.email,
-        email: other.email,
-        mobile_number: other.mobile_number,
-        origin: other.origin,
-        batch: other.batch,
-        branch: other.branch,
+        name: otherUser.name || otherUser.email,
+        email: otherUser.email,
+        mobile_number: otherUser.mobile_number,
+        origin: otherUser.origin,
+        batch: otherUser.batch,
+        branch: otherUser.branch,
         percentage: clampedPercentage,
       };
     });
@@ -367,8 +356,8 @@ app.get("/api/results", cas.bounce, async (req, res) => {
  */
 app.get("/api/users", async (req, res) => {
   try {
-    const result = await pool.query("SELECT * FROM users");
-    return res.json(result.rows);
+    const users = await User.find({});
+    return res.json(users);
   } catch (error) {
     console.error("Error fetching users:", error);
     return res.status(500).json({ error: "Server error fetching users" });
@@ -377,8 +366,8 @@ app.get("/api/users", async (req, res) => {
 
 app.get("/api/forms", async (req, res) => {
   try {
-    const result = await pool.query("SELECT * FROM forms");
-    return res.json(result.rows);
+    const forms = await Form.find({}).populate('user_id', 'email name');
+    return res.json(forms);
   } catch (error) {
     console.error("Error fetching forms:", error);
     return res.status(500).json({ error: "Server error fetching forms" });
@@ -388,4 +377,7 @@ app.get("/api/forms", async (req, res) => {
 // Start the server
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  console.log(`- Frontend URL: http://localhost:3000`);
+  console.log(`- Backend URL: http://localhost:${PORT}`);
+  console.log(`- CAS Login: http://localhost:${PORT}/cas-login`);
 });
