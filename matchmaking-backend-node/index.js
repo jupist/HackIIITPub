@@ -464,7 +464,7 @@ app.get("/api/forms", async (req, res) => {
 // Start the server
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-  console.log(`- Frontend URL: http://localhost:3000`);
-  console.log(`- Backend URL: http://localhost:${PORT}`);
-  console.log(`- CAS Login: http://localhost:${PORT}/cas-login`);
+  console.log(`- Frontend URL: https://hack-iiit-pub.vercel.app`);
+  console.log(`- Backend URL: https://hackiiitpub.onrender.com`);
+  console.log(`- CAS Login: https://hackiiitpub.onrender.com/cas-login`);
 });
