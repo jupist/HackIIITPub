@@ -10,28 +10,33 @@ const app = express();
 
 app.use(express.json());
 
-// Updated CORS configuration to support both development and production
+// Updated CORS configuration for deployment
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
-    ? ['https://your-frontend-domain.com', 'http://localhost:3000'] 
+    ? ['https://your-frontend-url.vercel.app', 'http://localhost:3000'] 
     : 'http://localhost:3000',
   credentials: true,
 }));
 
-// Set up session management for CAS
+// Set up session management with more secure configuration
 app.use(
   session({
-    secret: "some-random-secret", // change this in production!
+    secret: process.env.SESSION_SECRET || "some-random-secret",
     resave: false,
     saveUninitialized: true,
-    cookie: { secure: false }, // set to true if using HTTPS
+    cookie: { 
+      secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax' // Required for cross-site cookies
+    },
   })
 );
 
-// Configure CAS using cas-authentication with the base URL
+// Configure CAS with environment-aware service URL
 const cas = new CasAuthentication({
   cas_url: "https://login.iiit.ac.in/cas",
-  service_url: "http://localhost:5000", // base URL (do not include path)
+  service_url: process.env.NODE_ENV === 'production' 
+    ? "https://matchmaking-backend.onrender.com" // Replace with your actual Render URL when deployed
+    : "http://localhost:5000",
   cas_version: "3.0",
 });
 
@@ -89,16 +94,21 @@ app.get("/cas-login", cas.bounce, async (req, res) => {
     const user = await User.findOne({ email: casUser.toLowerCase() });
     console.log("DB query result:", user);
     
+    // Frontend URL based on environment
+    const frontendURL = process.env.NODE_ENV === 'production'
+      ? 'https://your-frontend-url.vercel.app'  // Replace with your actual frontend URL
+      : 'http://localhost:3000';
+    
     if (!user) {
       // No profile exists: redirect to create-profile page with CAS email
-      return res.redirect("http://localhost:3000/create-profile?email=" + encodeURIComponent(casUser));
+      return res.redirect(`${frontendURL}/create-profile?email=${encodeURIComponent(casUser)}`);
     } else {
       if (user.form_filled) {
         // Form already filled: redirect to results page with CAS email
-        return res.redirect("http://localhost:3000/results?email=" + encodeURIComponent(casUser));
+        return res.redirect(`${frontendURL}/results?email=${encodeURIComponent(casUser)}`);
       } else {
         // Profile exists but form not filled: redirect to fill-form page with CAS email
-        return res.redirect("http://localhost:3000/fill-form?email=" + encodeURIComponent(casUser));
+        return res.redirect(`${frontendURL}/fill-form?email=${encodeURIComponent(casUser)}`);
       }
     }
   } catch (error) {
