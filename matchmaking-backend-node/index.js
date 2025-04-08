@@ -35,7 +35,7 @@ app.use(
 const cas = new CasAuthentication({
   cas_url: "https://login.iiit.ac.in/cas",
   service_url: process.env.NODE_ENV === 'production' 
-    ? "https://matchmaking-backend.onrender.com" // Replace with your actual Render URL when deployed
+    ? "https://hackiiitpub.onrender.com" // Your actual Render URL
     : "http://localhost:5000",
   cas_version: "3.0",
 });
@@ -104,7 +104,7 @@ app.get("/cas-login", cas.bounce, async (req, res) => {
     
     // Frontend URL based on environment
     const frontendURL = process.env.NODE_ENV === 'production'
-      ? 'https://your-frontend-url.vercel.app'  // Replace with your actual frontend URL
+      ? 'https://your-frontend-url.vercel.app'  // Update this when you deploy your frontend
       : 'http://localhost:3000';
     
     if (!user) {
