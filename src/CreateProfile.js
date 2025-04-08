@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import API_URL from './config';
 
 const CreateProfile = () => {
   const [searchParams] = useSearchParams();
@@ -23,7 +24,7 @@ const CreateProfile = () => {
     const profileData = { ...formData, email: casEmail };
 
     try {
-      const response = await fetch("http://localhost:5000/api/users", {
+      const response = await fetch(`${API_URL}/api/users`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include", // send cookies (session)
@@ -38,7 +39,7 @@ const CreateProfile = () => {
       console.log("CreateProfile: Profile created:", data);
       // Redirect to fill-form page after successful profile creation
       window.location.href =
-        "http://localhost:3000/fill-form?email=" + encodeURIComponent(casEmail);
+        `${window.location.origin}/fill-form?email=${encodeURIComponent(casEmail)}`;
     } catch (error) {
       console.error("CreateProfile: Error creating profile:", error);
     }

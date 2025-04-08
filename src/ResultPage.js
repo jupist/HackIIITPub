@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import API_URL from "./config";
 
 const ResultPage = () => {
   const [results, setResults] = useState([]);
@@ -11,7 +12,7 @@ const ResultPage = () => {
     const fetchResults = async () => {
       try {
         const response = await fetch(
-          `http://localhost:5000/api/results?email=${encodeURIComponent(casEmail)}`,
+          `${API_URL}/api/results?email=${encodeURIComponent(casEmail)}`,
           { credentials: "include" }
         );
         if (!response.ok) {

@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
+import API_URL from './config';
 
 const FormPage = () => {
   const [searchParams] = useSearchParams();
@@ -28,7 +29,7 @@ const FormPage = () => {
     console.log("FormPage: Submitting form with", { email: casEmail, answers });
 
     try {
-      const response = await fetch("http://localhost:5000/api/forms", {
+      const response = await fetch(`${API_URL}/api/forms`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include", // send cookies along with request
