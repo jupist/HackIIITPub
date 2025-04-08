@@ -13,7 +13,7 @@ app.use(express.json());
 // Updated CORS configuration for deployment
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
-    ? ['https://your-frontend-url.vercel.app', 'http://localhost:3000'] 
+    ? ['https://hack-iiit-pub.vercel.app', 'http://localhost:3000'] 
     : 'http://localhost:3000',
   credentials: true,
 }));
@@ -104,7 +104,7 @@ app.get("/cas-login", cas.bounce, async (req, res) => {
     
     // Frontend URL based on environment
     const frontendURL = process.env.NODE_ENV === 'production'
-      ? 'https://your-frontend-url.vercel.app'  // Update this when you deploy your frontend
+      ? 'https://hack-iiit-pub.vercel.app'  // Your actual Vercel URL
       : 'http://localhost:3000';
     
     if (!user) {
