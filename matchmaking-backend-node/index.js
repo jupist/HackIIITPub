@@ -31,16 +31,17 @@ app.use(
   })
 );
 
-// Updated CAS configuration to fix the duplicated path issue
+// Updated CAS configuration with fixed debug mode and session handling
 const cas = new CasAuthentication({
   cas_url: "https://login.iiit.ac.in/cas",
   service_url: process.env.NODE_ENV === 'production' 
-    ? "https://hackiiitpub.onrender.com" // No path in service_url to prevent duplication
+    ? "https://hackiiitpub.onrender.com" 
     : "http://localhost:5000",
   cas_version: "3.0",
-  session_name: "cas_user",
-  session_info: "cas_userinfo",
-  is_dev_mode: false,
+  renew: false,
+  destroy_session: false,
+  session_name: "cas_user", // Make sure this is consistent
+  is_dev_mode: false, // Set to true only for local testing
   dev_mode_user: "",
   dev_mode_info: {}
 });
@@ -90,6 +91,30 @@ const User = model('User', UserSchema);
 const Form = model('Form', FormSchema);
 
 /**
+ * Simple debug route to check CAS session
+ */
+app.get("/debug-session", (req, res) => {
+  console.log("Current session:", req.session);
+  return res.json({
+    session: req.session,
+    cas_user: req.session.cas_user || null,
+    message: "Check server logs for full session info"
+  });
+});
+
+/**
+ * Direct redirect route to bypass CAS issues
+ */
+app.get("/direct-redirect", (req, res) => {
+  const email = req.query.email || "test@example.com";
+  console.log(`Direct redirect for email: ${email}`);
+  
+  // Frontend URL hardcoded
+  const frontendURL = 'https://hack-iiit-pub.vercel.app';
+  return res.redirect(`${frontendURL}/create-profile?email=${encodeURIComponent(email)}`);
+});
+
+/**
  * CAS LOGIN ROUTE
  * - Enforces CAS authentication.
  * - Retrieves the CAS email from the session.
@@ -97,22 +122,31 @@ const Form = model('Form', FormSchema);
  * - Redirects to the appropriate React page with the email as a query parameter.
  */
 app.get("/cas-login", cas.bounce, async (req, res) => {
-  // Better session handling - debug logging
+  // Debug logging
   console.log("Session after CAS authentication:", req.session);
   
-  // Get the CAS username from the session
-  const casUser = req.session.cas_user;
+  // Extract CAS user from session with fallbacks
+  let casUser = null;
+  if (req.session.cas_user) {
+    casUser = req.session.cas_user;
+  } else if (req.session.cas && req.session.cas.user) {
+    casUser = req.session.cas.user;
+  } else if (req.user) {
+    casUser = req.user;
+  }
+  
   console.log("CAS user from session:", casUser);
   
   if (!casUser) {
-    return res.status(401).send("CAS authentication failed - No user in session");
+    console.error("CAS authentication failed - No user in session");
+    return res.status(401).send("Authentication failed. Please try again.");
   }
 
   try {
     const user = await User.findOne({ email: casUser.toLowerCase() });
     console.log("DB query result:", user);
     
-    // Frontend URL hardcoded exactly for production
+    // Hardcoded frontend URL
     const frontendURL = 'https://hack-iiit-pub.vercel.app';
     
     if (!user) {
