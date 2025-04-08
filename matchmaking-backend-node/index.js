@@ -41,10 +41,18 @@ const cas = new CasAuthentication({
 });
 
 // Read environment variables
-const { PORT = 5000, MONGODB_URI } = process.env;
+const { PORT = 5000, NODE_ENV } = process.env;
+let { MONGODB_URI } = process.env;
+
+// In Render, sometimes quotes get included in the environment variable
+if (MONGODB_URI && (MONGODB_URI.startsWith('"') || MONGODB_URI.startsWith("'"))) {
+  MONGODB_URI = MONGODB_URI.substring(1, MONGODB_URI.length - 1);
+  console.log("Fixed MongoDB URI by removing quotes");
+}
 
 // Log the MongoDB URI (for debugging - remove in production)
-console.log("Attempting to connect to MongoDB with URI:", MONGODB_URI ? "URI exists" : "URI is missing");
+console.log("Attempting to connect to MongoDB with URI:", 
+  MONGODB_URI ? (MONGODB_URI.substring(0, 15) + "...") : "URI is missing");
 
 // Connect to MongoDB with more robust error handling
 mongoose.connect(MONGODB_URI)
