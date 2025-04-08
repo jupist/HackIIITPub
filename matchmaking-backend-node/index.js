@@ -31,15 +31,18 @@ app.use(
   })
 );
 
-// Updated CAS configuration with proper naming
+// Updated CAS configuration with proper naming and debugging
 const cas = new CasAuthentication({
   cas_url: "https://login.iiit.ac.in/cas",
   service_url: process.env.NODE_ENV === 'production' 
-    ? "https://hackiiitpub.onrender.com" // Your actual Render URL
-    : "http://localhost:5000",
+    ? "https://hackiiitpub.onrender.com/cas-login" // Explicit path to prevent /undefined
+    : "http://localhost:5000/cas-login",
   cas_version: "3.0",
   session_name: "cas_user", // Explicitly naming the session key
-  session_info: "cas_userinfo" // Additional session info
+  session_info: "cas_userinfo", // Additional session info
+  is_dev_mode: false, // Turn off dev mode
+  dev_mode_user: "", // No dev mode user
+  dev_mode_info: {} // No dev mode info
 });
 
 // Read environment variables
