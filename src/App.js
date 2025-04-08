@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import API_URL from './config';
 
 // Components
@@ -21,12 +21,14 @@ const LandingPage = () => {
       <h1>IIIT Matchmaking</h1>
       <p>Find your perfect match based on personality compatibility!</p>
       <div className="cta-button">
-        <a href="#" onClick={(e) => {
-          e.preventDefault();
-          window.location.href = `${API_URL}/cas-login`;
-        }}>
+        <button 
+          className="login-button"
+          onClick={() => {
+            window.location.href = `${API_URL}/cas-login`;
+          }}
+        >
           Login with IIIT Account
-        </a>
+        </button>
       </div>
     </div>
   );
