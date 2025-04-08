@@ -31,7 +31,7 @@ app.use(
   })
 );
 
-// Updated CAS configuration with fixed debug mode and session handling
+// Updated CAS configuration with extensive debugging
 const cas = new CasAuthentication({
   cas_url: "https://login.iiit.ac.in/cas",
   service_url: process.env.NODE_ENV === 'production' 
@@ -40,9 +40,9 @@ const cas = new CasAuthentication({
   cas_version: "3.0",
   renew: false,
   destroy_session: false,
-  session_name: "cas_user", // Make sure this is consistent
-  is_dev_mode: false, // Set to true only for local testing
-  dev_mode_user: "",
+  session_name: "cas_user",
+  is_dev_mode: true, // Enable dev mode for better debugging
+  dev_mode_user: "test@iiit.ac.in", // Test user for local development
   dev_mode_info: {}
 });
 
@@ -99,6 +99,30 @@ app.get("/debug-session", (req, res) => {
     session: req.session,
     cas_user: req.session.cas_user || null,
     message: "Check server logs for full session info"
+  });
+});
+
+/**
+ * Additional debugging route that dumps complete ticket info
+ */
+app.get("/cas-debug", (req, res) => {
+  // Get the ticket from the query parameter
+  const ticket = req.query.ticket || 'no-ticket';
+  
+  // Dump all request info
+  console.log("==== CAS DEBUG INFO ====");
+  console.log("Request URL:", req.url);
+  console.log("Request query:", req.query);
+  console.log("Ticket:", ticket);
+  console.log("Headers:", req.headers);
+  console.log("Session:", req.session);
+  
+  return res.json({
+    message: "CAS debug info logged",
+    ticket: ticket,
+    session: req.session,
+    query: req.query,
+    headers: req.headers
   });
 });
 
