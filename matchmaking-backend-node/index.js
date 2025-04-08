@@ -102,7 +102,7 @@ app.get("/cas-login", cas.bounce, async (req, res) => {
     const user = await User.findOne({ email: casUser.toLowerCase() });
     console.log("DB query result:", user);
     
-    // Frontend URL based on environment
+    // Frontend URL based on environment - fixed to use exact URL
     const frontendURL = process.env.NODE_ENV === 'production'
       ? 'https://hack-iiit-pub.vercel.app'  // Your actual Vercel URL
       : 'http://localhost:3000';
