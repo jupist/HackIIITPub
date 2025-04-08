@@ -1,26 +1,48 @@
-import React, { useEffect } from "react";
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
-import CreateProfile from "./CreateProfile";
-import FormPage from "./FormPage";
-import ResultPage from "./ResultPage";
+import React from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import API_URL from './config';
 
-const App = () => {
-  useEffect(() => {
-    // Only redirect to CAS login if at the root path
-    if (window.location.pathname === "/") {
-      window.location.href = `${API_URL}/cas-login`;
-    }
-  }, []);
+// Components
+import CreateProfile from './CreateProfile';
+import FormPage from './FormPage';
+import ResultPage from './ResultPage';
 
+// Auth handling component
+const CasLogin = () => {
+  // Redirect to backend CAS login endpoint
+  window.location.href = `${API_URL}/cas-login`;
+  return <div>Redirecting to login...</div>;
+};
+
+// Landing page component
+const LandingPage = () => {
   return (
-    <Router>
+    <div className="landing-page">
+      <h1>IIIT Matchmaking</h1>
+      <p>Find your perfect match based on personality compatibility!</p>
+      <div className="cta-button">
+        <a href="#" onClick={(e) => {
+          e.preventDefault();
+          window.location.href = `${API_URL}/cas-login`;
+        }}>
+          Login with IIIT Account
+        </a>
+      </div>
+    </div>
+  );
+};
+
+const App = () => {
+  return (
+    <BrowserRouter>
       <Routes>
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/login" element={<CasLogin />} />
         <Route path="/create-profile" element={<CreateProfile />} />
         <Route path="/fill-form" element={<FormPage />} />
         <Route path="/results" element={<ResultPage />} />
       </Routes>
-    </Router>
+    </BrowserRouter>
   );
 };
 
